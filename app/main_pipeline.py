@@ -3,5 +3,4 @@ from app.generator.llm import get_answer
 def run_main_pipeline(query):
     chunks = retrive(query)
     result = get_answer(chunks, query)
-    
-    return results
+    return result

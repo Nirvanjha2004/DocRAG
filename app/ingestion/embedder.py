@@ -8,3 +8,7 @@ def create_embeddings():
         raise ValueError("GOOGLE_API_KEY environment variable not set.")
     
     return GoogleGenerativeAIEmbeddings(api_key=api_key)
+
+def embed_documents(documents):
+    embedder = create_embeddings()
+    return embedder.embed_documents(documents)

@@ -1,7 +1,7 @@
 from .loader import load_pdf
 from .chunking import chunk_documents
 from .embedder import create_embeddings
-
+from .store_to_db import store_embeddings
 def run_ingestion_pipeline(file_path):
     # Step 1: Load the PDF document
     documents = load_pdf(file_path)
@@ -13,4 +13,5 @@ def run_ingestion_pipeline(file_path):
     embedder = create_embeddings()
     embeddings = embedder.embed_documents(chunks)
 
-    return embeddings
+    # Step 4: Store the chunks and their embeddings in the database
+    store_embeddings(chunks, embeddings)

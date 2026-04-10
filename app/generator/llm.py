@@ -3,7 +3,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
-def get_answer(context_chunks, user_query):
+def get_answer(context_chunks, user_query, chat_history=""):
     # 1. Initialize LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
@@ -15,6 +15,9 @@ def get_answer(context_chunks, user_query):
     template = """
     You are a helpful assistant. Use the following context to answer the user's question.
     If the answer is not in the context, just say that you don't know. 
+
+    Conversation history:
+    {chat_history}
 
     Context:
     {context}
@@ -33,7 +36,8 @@ def get_answer(context_chunks, user_query):
     # context_chunks MUST be a list of Document objects retrieved from your DB
     response = combine_docs_chain.invoke({
         "context": context_chunks, 
-        "input": user_query
+        "input": user_query,
+        "chat_history": chat_history,
     })
     
     return response # This returns the string answer

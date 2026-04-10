@@ -1,14 +1,18 @@
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import os
 from app.config.db import get_client
+from langchain.schema import Document
 
-api_key = os.getenv("GOOGLE_API_KEY")
 
 def create_embeddings():
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY environment variable not set.")
     
-    return GoogleGenerativeAIEmbeddings(api_key=api_key)
+    return GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001",
+        google_api_key=api_key,
+    )
 
 
 def get_embeddings(query):
@@ -28,9 +32,15 @@ def search_in_db(query_embedding, top_k=5):
 def return_chunks(embedding_results):
     chunks = []
     for er in embedding_results:
-        chunks.append({
-            "text" : er.payload["text"]
-        })
+        payload = er.payload or {}
+        chunks.append(
+            Document(
+                page_content=payload.get("text", ""),
+                metadata={
+                    "source": payload.get("source", "unknown"),
+                },
+            )
+        )
 
     return chunks
 
@@ -40,3 +50,7 @@ def retrieve(query):
     related_chunks = return_chunks(embedding_results)
 
     return related_chunks
+
+
+def retrive(query):
+    return retrieve(query)

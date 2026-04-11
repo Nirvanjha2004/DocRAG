@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os
+from flask_cors import CORS
 from .auth import auth_bp
 from .middleware import require_token
 from .chat_storage import (
@@ -14,6 +15,7 @@ from app.main_pipeline import run_main_pipeline
 from app.ingestion.ingestion_pipeline import run_ingestion_pipeline
 
 app = Flask(__name__)
+CORS(app)
 app.register_blueprint(auth_bp)
 
 

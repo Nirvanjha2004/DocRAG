@@ -5,16 +5,33 @@ export default {
     extend: {
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-      },
-      boxShadow: {
-        cloud: "0 30px 80px rgba(15, 23, 42, 0.12)",
-        soft: "0 8px 30px rgba(15, 23, 42, 0.08)",
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
       colors: {
-        slateMist: "#e8eef9",
+        // Named surface tokens — use these instead of raw hex in components
+        base:     "#0B0F14",
+        surface:  "#0d1117",
+        elevated: "#161b22",
+        overlay:  "#1c2333",
       },
+      borderColor: {
+        DEFAULT: "rgba(255,255,255,0.08)",
+      },
+      boxShadow: {
+        // Glow effects for interactive elements
+        "glow-violet": "0 0 0 3px rgba(124,58,237,0.15), 0 4px 16px rgba(124,58,237,0.12)",
+        "glow-sm":     "0 0 0 2px rgba(124,58,237,0.12)",
+        "card":        "0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3)",
+        "elevated":    "0 4px 24px rgba(0,0,0,0.5)",
+      },
+      animation: {
+        "spin-slow": "spin 2s linear infinite",
+      },
+      // Consistent border radius scale
       borderRadius: {
-        xl2: "24px",
+        "xl":  "12px",
+        "2xl": "16px",
+        "3xl": "20px",
       },
     },
   },

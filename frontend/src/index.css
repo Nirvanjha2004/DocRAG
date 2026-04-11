@@ -1,31 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────
+   DESIGN TOKENS
+───────────────────────────────────────── */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --bg-base:      #0B0F14;
+  --bg-surface:   #0d1117;
+  --bg-elevated:  #161b22;
+  --bg-overlay:   #1c2333;
+
+  /* Borders */
+  --border:       rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-focus: rgba(124, 58, 237, 0.5);
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:   #475569;
+  --text-subtle:  #334155;
+
+  /* Accent */
+  --accent:       #7c3aed;
+  --accent-light: #8b5cf6;
+  --accent-glow:  rgba(124, 58, 237, 0.15);
+
+  /* Status */
+  --success:      #10b981;
+  --warning:      #f59e0b;
+  --error:        #ef4444;
+  --info:         #06b6d4;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
 }
+
+/* ─────────────────────────────────────────
+   BASE
+───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
   min-height: 100vh;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  background: radial-gradient(circle at 10% 10%, #dfe9fb 0%, #d5deee 28%, #d2d9e8 100%);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
+/* ─────────────────────────────────────────
+   SCROLLBARS
+───────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.08); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+::-webkit-scrollbar-track  { background: transparent; }
+
+/* ─────────────────────────────────────────
+   TYPOGRAPHY
+───────────────────────────────────────── */
+code, pre, kbd { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* ─────────────────────────────────────────
+   PROSE (markdown content inside chat)
+───────────────────────────────────────── */
+.prose-sm {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  color: #cbd5e1;
+}
+.prose-sm > *:first-child { margin-top: 0 !important; }
+.prose-sm > *:last-child  { margin-bottom: 0 !important; }
+
+/* ─────────────────────────────────────────
+   FOCUS VISIBLE
+───────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.4);
-  border-radius: 9999px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-track {
-  background: transparent;
+/* ─────────────────────────────────────────
+   SELECTION
+───────────────────────────────────────── */
+::selection {
+  background: rgba(124, 58, 237, 0.3);
+  color: #f1f5f9;
 }

@@ -6,7 +6,7 @@ from langchain_core.documents import Document
 
 def get_answer(context_chunks, user_query, chat_history=""):
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=0.3
     )

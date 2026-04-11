@@ -1,43 +1,44 @@
 import os
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import PromptTemplate
+from langchain_core.documents import Document
+
 
 def get_answer(context_chunks, user_query, chat_history=""):
-    # 1. Initialize LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-1.5-flash",
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         temperature=0.3
     )
 
-    # 2. Define Template (Keep {context} and {input} placeholders)
-    template = """
-    You are a helpful assistant. Use the following context to answer the user's question.
-    If the answer is not in the context, just say that you don't know. 
+    context_text = "\n\n".join(
+        chunk.page_content if isinstance(chunk, Document) else str(chunk)
+        for chunk in context_chunks
+    )
 
-    Conversation history:
-    {chat_history}
+    template = """You are a helpful assistant. Use the following context to answer the user's question.
+If the answer is not in the context, just say that you don't know.
 
-    Context:
-    {context}
+Conversation history:
+{chat_history}
 
-    Question: 
-    {input}
+Context:
+{context}
 
-    Answer:
-    """
+Question: 
+{input}
+
+Answer:"""
+
     prompt = PromptTemplate.from_template(template)
+    chain = prompt | llm
 
-    # 3. Create the Chain
-    combine_docs_chain = create_stuff_documents_chain(llm, prompt)
-
-    # 4. Invoke correctly
-    # context_chunks MUST be a list of Document objects retrieved from your DB
-    response = combine_docs_chain.invoke({
-        "context": context_chunks, 
+    response = chain.invoke({
+        "context": context_text,
         "input": user_query,
         "chat_history": chat_history,
     })
-    
-    return response # This returns the string answer
+
+    if hasattr(response, "content"):
+        return response.content
+    return str(response)

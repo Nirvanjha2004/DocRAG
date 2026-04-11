@@ -21,11 +21,11 @@ def get_embeddings(query):
 
 def search_in_db(query_embedding, top_k=5):
     client = get_client()
-    results = client.search(
-        collection_name = "documents", 
-        query_vector = query_embedding, 
-        limit = top_k
-    )
+    results = client.query_points(
+        collection_name="documents",
+        query=query_embedding,
+        limit=top_k,
+    ).points
 
     return results
 

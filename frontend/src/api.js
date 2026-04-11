@@ -2,9 +2,7 @@ import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-const client = axios.create({
-  baseURL: API_BASE,
-});
+const client = axios.create({ baseURL: API_BASE });
 
 export function setAuthToken(token) {
   if (token) {
@@ -52,16 +50,23 @@ export async function listDocuments() {
   return data.documents || [];
 }
 
-export async function reingestDocument(filename) {
-  const { data } = await client.post("/api/reingest", { filename });
-  return data;
-}
-
-export async function ingestPdf(file) {
+export async function ingestPdfs(files) {
   const formData = new FormData();
-  formData.append("file", file);
+  for (const file of files) {
+    formData.append("files", file);
+  }
   const { data } = await client.post("/api/ingest", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-  return data;
+  return data; // { jobs: [{job_id, filename}] }
+}
+
+export async function getIngestStatus(jobId) {
+  const { data } = await client.get(`/api/ingest/status/${jobId}`);
+  return data; // { status, progress, filename, message }
+}
+
+export async function reingestDocument(filename) {
+  const { data } = await client.post("/api/reingest", { filename });
+  return data; // { job_id, filename }
 }

@@ -1,0 +1,32 @@
+[
+  {
+    "role": "user",
+    "content": "Hii Did you get the diary of a whimpy kid pdf ?/ ",
+    "created_at": "2026-04-11T08:54:16.017555+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "I don't know anything about a \"diary of a whimpy kid pdf\" as it's not mentioned in the provided context. The context appears to be a resume or profile of Nirvan Jha, detailing his education, experience, and technical skills.",
+    "created_at": "2026-04-11T08:54:18.377622+00:00"
+  },
+  {
+    "role": "user",
+    "content": "Also can i ask you something about anything else happening in the world ? ",
+    "created_at": "2026-04-11T08:55:31.726584+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "I don't know about any current events or news happening in the world, as that information is not provided in the context. The context appears to be a resume or profile of Nirvan Jha, detailing his education, experience, and technical skills. If you have any questions related to Nirvan Jha's background or skills, I'd be happy to try and help.",
+    "created_at": "2026-04-11T08:55:32.230648+00:00"
+  },
+  {
+    "role": "user",
+    "content": "Now do you know ?? ",
+    "created_at": "2026-04-11T09:08:39.061397+00:00"
+  },
+  {
+    "role": "assistant",
+    "content": "No, I still don't know about the \"diary of a whimpy kid pdf\" or any current events happening in the world. The provided context is about Nirvan Jha's education, experience, and technical skills, and it doesn't mention anything about the diary or world events. If you have any questions related to Nirvan Jha's background or skills, I'd be happy to try and help.",
+    "created_at": "2026-04-11T09:08:39.714661+00:00"
+  }
+]

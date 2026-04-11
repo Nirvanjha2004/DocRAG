@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 import os
+import threading
+import uuid as uuid_lib
 from flask_cors import CORS
 from .auth import auth_bp
 from .middleware import require_token
@@ -21,6 +23,9 @@ app.register_blueprint(auth_bp)
 
 with app.app_context():
     init_db()
+
+# In-memory job store: job_id -> {status, progress, filename, message}
+ingest_jobs = {}
 
 
 @app.route('/api/health', methods=['GET'])
@@ -57,12 +62,8 @@ def get_chat_messages(username, conversation_id):
         conversation = get_conversation(conversation_id, username=username)
         if not conversation:
             return jsonify({"error": "Conversation not found"}), 404
-
         messages = get_messages(conversation_id)
-        return jsonify({
-            "conversation_id": conversation_id,
-            "messages": messages,
-        }), 200
+        return jsonify({"conversation_id": conversation_id, "messages": messages}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -74,12 +75,66 @@ def list_documents(username):
         user_upload_dir = f"data/uploads/{username}"
         if not os.path.exists(user_upload_dir):
             return jsonify({"documents": []}), 200
-        files = [
-            f for f in os.listdir(user_upload_dir) if f.endswith('.pdf')
-        ]
+        files = sorted([f for f in os.listdir(user_upload_dir) if f.endswith('.pdf')])
         return jsonify({"documents": files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/ingest', methods=['POST'])
+@require_token
+def ingest_document(username):
+    try:
+        files = request.files.getlist('files')
+        if not files or all(f.filename == '' for f in files):
+            return jsonify({"error": "No files provided"}), 400
+
+        user_upload_dir = f"data/uploads/{username}"
+        os.makedirs(user_upload_dir, exist_ok=True)
+
+        jobs = []
+        for file in files:
+            if not file or not file.filename.endswith('.pdf'):
+                continue
+            file_path = os.path.join(user_upload_dir, file.filename)
+            file.save(file_path)
+
+            job_id = str(uuid_lib.uuid4())
+            ingest_jobs[job_id] = {
+                "status": "processing",
+                "progress": 0,
+                "filename": file.filename,
+                "message": "Starting...",
+            }
+            jobs.append({"job_id": job_id, "filename": file.filename})
+
+            def _run(fp=file_path, jid=job_id, fname=file.filename):
+                def cb(pct, msg=""):
+                    ingest_jobs[jid] = {"status": "processing", "progress": pct, "filename": fname, "message": msg}
+                try:
+                    run_ingestion_pipeline(fp, progress_callback=cb)
+                    ingest_jobs[jid] = {"status": "done", "progress": 100, "filename": fname, "message": "Ready to query"}
+                except Exception as ex:
+                    ingest_jobs[jid] = {"status": "error", "progress": 0, "filename": fname, "message": str(ex)}
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        if not jobs:
+            return jsonify({"error": "No valid PDF files provided"}), 400
+
+        return jsonify({"jobs": jobs}), 202
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/ingest/status/<job_id>', methods=['GET'])
+@require_token
+def ingest_status(username, job_id):
+    job = ingest_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(job), 200
 
 
 @app.route('/api/reingest', methods=['POST'])
@@ -93,39 +148,22 @@ def reingest_document(username):
         file_path = os.path.join(f"data/uploads/{username}", filename)
         if not os.path.exists(file_path):
             return jsonify({"error": "File not found"}), 404
-        result = run_ingestion_pipeline(file_path)
-        return jsonify({"message": "Document re-ingested successfully", "result": result}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
+        job_id = str(uuid_lib.uuid4())
+        ingest_jobs[job_id] = {"status": "processing", "progress": 0, "filename": filename, "message": "Starting..."}
 
-@app.route('/api/ingest', methods=['POST'])
-@require_token
-def ingest_document(username):
-    try:
-        file = request.files.get('file')
-        
-        if not file or file.filename == '':
-            return jsonify({"error": "No file provided"}), 400
-        
-        if not file.filename.endswith('.pdf'):
-            return jsonify({"error": "Only PDF files are supported"}), 400
-        
-        # Create user directory if needed
-        user_upload_dir = f"data/uploads/{username}"
-        os.makedirs(user_upload_dir, exist_ok=True)
-        
-        file_path = os.path.join(user_upload_dir, file.filename)
-        file.save(file_path)
-        
-        result = run_ingestion_pipeline(file_path)
-        
-        return jsonify({
-            "message": "Document ingested successfully",
-            "user": username,
-            "result": result
-        }), 200
-    
+        def _run(fp=file_path, jid=job_id, fname=filename):
+            def cb(pct, msg=""):
+                ingest_jobs[jid] = {"status": "processing", "progress": pct, "filename": fname, "message": msg}
+            try:
+                run_ingestion_pipeline(fp, progress_callback=cb)
+                ingest_jobs[jid] = {"status": "done", "progress": 100, "filename": fname, "message": "Ready to query"}
+            except Exception as ex:
+                ingest_jobs[jid] = {"status": "error", "progress": 0, "filename": fname, "message": str(ex)}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({"job_id": job_id, "filename": filename}), 202
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -137,7 +175,7 @@ def query_rag(username):
         data = request.get_json()
         query = data.get('query')
         conversation_id = data.get('conversation_id')
-        
+
         if not query:
             return jsonify({"error": "Query is required"}), 400
 
@@ -155,17 +193,17 @@ def query_rag(username):
 
         result = run_main_pipeline(query, chat_history=chat_history)
         add_message(conversation_id, "assistant", result)
-        
+
         return jsonify({
             "query": query,
             "answer": result,
             "user": username,
             "conversation_id": conversation_id,
         }), 200
-    
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=False, host='0.0.0.0', port=8000)

@@ -3,32 +3,48 @@ from .chunking import chunk_documents
 from .embedder import create_embeddings
 from .store_to_db import store_embeddings
 from app.config.db import init_db
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-def run_ingestion_pipeline(file_path):
+def _embed_and_store(batch, embedder):
+    chunks = chunk_documents(batch)
+    if not chunks:
+        return 0
+    texts = [c.page_content for c in chunks]
+    embeddings = embedder.embed_documents(texts)
+    store_embeddings(chunks, embeddings)
+    return len(chunks)
+
+
+def run_ingestion_pipeline(file_path, progress_callback=None):
     init_db()
 
-    # Step 1: Load the PDF document
-    document_stream = load_pdf(file_path)
+    if progress_callback:
+        progress_callback(2, "Loading PDF...")
 
-    # Step 2 + 3 + 4: Process lazy-loaded pages in batches
-    page_batch = []
-    page_batch_size = 25
+    all_pages = list(load_pdf(file_path))
+    total_pages = len(all_pages)
+
+    if progress_callback:
+        progress_callback(10, f"Loaded {total_pages} pages, chunking...")
+
+    batch_size = 40
+    batches = [all_pages[i:i + batch_size] for i in range(0, total_pages, batch_size)]
+    total_batches = max(len(batches), 1)
+
     embedder = create_embeddings()
 
-    for document in document_stream:
-        page_batch.append(document)
-        if len(page_batch) < page_batch_size:
-            continue
+    completed = 0
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_embed_and_store, batch, embedder): i for i, batch in enumerate(batches)}
+        for future in as_completed(futures):
+            future.result()
+            completed += 1
+            if progress_callback:
+                pct = 10 + int(completed / total_batches * 88)
+                progress_callback(pct, f"Indexed {completed}/{total_batches} batches...")
 
-        chunks = chunk_documents(page_batch)
-        chunk_texts = [chunk.page_content for chunk in chunks]
-        embeddings = embedder.embed_documents(chunk_texts)
-        store_embeddings(chunks, embeddings)
-        page_batch = []
+    if progress_callback:
+        progress_callback(100, "Done")
 
-    if page_batch:
-        chunks = chunk_documents(page_batch)
-        chunk_texts = [chunk.page_content for chunk in chunks]
-        embeddings = embedder.embed_documents(chunk_texts)
-        store_embeddings(chunks, embeddings)
+    return {"pages": total_pages, "batches": total_batches}

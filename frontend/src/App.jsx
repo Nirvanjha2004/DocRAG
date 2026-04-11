@@ -36,6 +36,25 @@ function formatAssistantMessage(content) {
   return String(content || "").split("\n").filter((l) => l.trim().length > 0);
 }
 
+function getErrorMessage(err, fallback) {
+  const data = err?.response?.data;
+  const candidate = data?.error ?? data?.message ?? err?.message;
+  if (typeof candidate === "string" && candidate.trim()) {
+    return candidate;
+  }
+  if (candidate && typeof candidate === "object") {
+    if (typeof candidate.message === "string" && candidate.message.trim()) {
+      return candidate.message;
+    }
+    try {
+      return JSON.stringify(candidate);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 function Toast({ message, type, onClose }) {
   useEffect(() => {
     const t = setTimeout(onClose, 4000);
@@ -78,7 +97,7 @@ function AuthScreen({ onAuth }) {
       const result = await login({ username, password });
       onAuth({ token: result.token, username: result.username });
     } catch (err) {
-      setError(err?.response?.data?.error || "Authentication failed");
+      setError(getErrorMessage(err, "Authentication failed"));
     } finally {
       setLoading(false);
     }
@@ -140,7 +159,7 @@ export default function App() {
         docs.forEach((d) => { statuses[d] = { status: "needs_reingest", progress: 0, message: "Needs re-indexing after restart" }; });
         setDocStatuses(statuses);
       } catch (err) {
-        setError(err?.response?.data?.error || "Failed to load data");
+        setError(getErrorMessage(err, "Failed to load data"));
       }
     })();
   }, [token]);
@@ -149,7 +168,7 @@ export default function App() {
     if (!token || !activeConversationId) { setMessages([]); return; }
     (async () => {
       try { setMessages(await getMessages(activeConversationId)); }
-      catch (err) { setError(err?.response?.data?.error || "Failed to load messages"); }
+      catch (err) { setError(getErrorMessage(err, "Failed to load messages")); }
     })();
   }, [token, activeConversationId]);
 
@@ -205,7 +224,7 @@ export default function App() {
       setActiveConversationId(created.conversation_id);
       setMessages([]);
     } catch (err) {
-      setError(err?.response?.data?.error || "Failed to create conversation");
+      setError(getErrorMessage(err, "Failed to create conversation"));
     }
   }
 
@@ -231,7 +250,7 @@ export default function App() {
       }
       setMessages((prev) => [...prev, { role: "assistant", content: response.answer, created_at: new Date().toISOString() }]);
     } catch (err) {
-      setError(err?.response?.data?.error || "Query failed");
+      setError(getErrorMessage(err, "Query failed"));
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
@@ -264,7 +283,7 @@ export default function App() {
       }
       showToast(`${result.jobs?.length || 0} file(s) uploaded — indexing in background...`);
     } catch (err) {
-      showToast(err?.response?.data?.error || "Upload failed", "error");
+      showToast(getErrorMessage(err, "Upload failed"), "error");
       setDocStatuses((prev) => {
         const updated = { ...prev };
         newDocs.forEach((n) => { delete updated[n]; });
@@ -281,7 +300,7 @@ export default function App() {
       const result = await reingestDocument(filename);
       startPolling(result.job_id, filename);
     } catch (err) {
-      showToast(err?.response?.data?.error || "Re-index failed", "error");
+      showToast(getErrorMessage(err, "Re-index failed"), "error");
       setDocStatuses((prev) => ({ ...prev, [filename]: { status: "error", progress: 0, message: "Failed" } }));
     }
   }

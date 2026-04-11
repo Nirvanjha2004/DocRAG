@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CirclePlus,
-  Search,
   MessageSquare,
   Settings,
   Send,
@@ -12,14 +11,21 @@ import {
   Sparkles,
   LogOut,
   FileUp,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  RotateCcw,
+  X,
 } from "lucide-react";
 import {
   createConversation,
   getConversations,
   getMessages,
   ingestPdf,
+  listDocuments,
   login,
   queryRag,
+  reingestDocument,
   setAuthToken,
   signup,
 } from "./api";
@@ -27,6 +33,20 @@ import {
 function formatAssistantMessage(content) {
   const lines = String(content || "").split("\n").filter((line) => line.trim().length > 0);
   return lines;
+}
+
+function Toast({ message, type, onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl px-4 py-3 shadow-lg text-sm font-medium text-white transition ${type === "success" ? "bg-green-500" : "bg-red-500"}`}>
+      {type === "success" ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+      {message}
+      <button onClick={onClose} className="ml-1 opacity-70 hover:opacity-100"><X size={14} /></button>
+    </div>
+  );
 }
 
 function AuthScreen({ onAuth }) {
@@ -120,6 +140,10 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
+  const [reingesting, setReingesting] = useState(null);
+  const [uploadedDocs, setUploadedDocs] = useState([]);
+  const [ingestedDocs, setIngestedDocs] = useState(new Set());
+  const [toast, setToast] = useState(null);
   const [error, setError] = useState("");
   const fileInputRef = useRef(null);
   const chatBottomRef = useRef(null);
@@ -132,22 +156,18 @@ export default function App() {
     if (!token) return;
     (async () => {
       try {
-        const items = await getConversations();
-        setConversations(items);
-        if (items.length > 0) {
-          setActiveConversationId(items[0].conversation_id);
-        }
+        const [convItems, docs] = await Promise.all([getConversations(), listDocuments()]);
+        setConversations(convItems);
+        if (convItems.length > 0) setActiveConversationId(convItems[0].conversation_id);
+        setUploadedDocs(docs);
       } catch (err) {
-        setError(err?.response?.data?.error || "Failed to load conversations");
+        setError(err?.response?.data?.error || "Failed to load data");
       }
     })();
   }, [token]);
 
   useEffect(() => {
-    if (!token || !activeConversationId) {
-      setMessages([]);
-      return;
-    }
+    if (!token || !activeConversationId) { setMessages([]); return; }
     (async () => {
       try {
         const items = await getMessages(activeConversationId);
@@ -166,6 +186,10 @@ export default function App() {
     () => conversations.find((item) => item.conversation_id === activeConversationId),
     [conversations, activeConversationId]
   );
+
+  function showToast(message, type = "success") {
+    setToast({ message, type });
+  }
 
   function handleAuth({ token: nextToken, username: nextUsername }) {
     localStorage.setItem("token", nextToken);
@@ -189,39 +213,30 @@ export default function App() {
   async function handleSend(e) {
     e.preventDefault();
     if (!prompt.trim() || loading) return;
+    if (ingestedDocs.size === 0) {
+      setError("Please upload and ingest a PDF first before asking questions.");
+      return;
+    }
     setError("");
     setLoading(true);
 
-    const localUserMessage = {
-      role: "user",
-      content: prompt,
-      created_at: new Date().toISOString(),
-    };
+    const localUserMessage = { role: "user", content: prompt, created_at: new Date().toISOString() };
     setMessages((prev) => [...prev, localUserMessage]);
-
     const currentPrompt = prompt;
     setPrompt("");
 
     try {
-      const response = await queryRag({
-        query: currentPrompt,
-        conversationId: activeConversationId || null,
-      });
-
+      const response = await queryRag({ query: currentPrompt, conversationId: activeConversationId || null });
       if (!activeConversationId && response.conversation_id) {
         const items = await getConversations();
         setConversations(items);
         setActiveConversationId(response.conversation_id);
       }
-
-      const localAssistantMessage = {
-        role: "assistant",
-        content: response.answer,
-        created_at: new Date().toISOString(),
-      };
+      const localAssistantMessage = { role: "assistant", content: response.answer, created_at: new Date().toISOString() };
       setMessages((prev) => [...prev, localAssistantMessage]);
     } catch (err) {
       setError(err?.response?.data?.error || "Query failed");
+      setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
     }
@@ -230,16 +245,33 @@ export default function App() {
   async function handleUploadPdf(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setError("");
     setIngesting(true);
     try {
       await ingestPdf(file);
+      const docs = await listDocuments();
+      setUploadedDocs(docs);
+      setIngestedDocs((prev) => new Set([...prev, file.name]));
+      showToast(`"${file.name}" uploaded and indexed successfully!`);
     } catch (err) {
-      setError(err?.response?.data?.error || "Ingestion failed");
+      showToast(err?.response?.data?.error || "Upload failed", "error");
     } finally {
       setIngesting(false);
       event.target.value = "";
+    }
+  }
+
+  async function handleReingest(filename) {
+    setReingesting(filename);
+    setError("");
+    try {
+      await reingestDocument(filename);
+      setIngestedDocs((prev) => new Set([...prev, filename]));
+      showToast(`"${filename}" re-indexed successfully!`);
+    } catch (err) {
+      showToast(err?.response?.data?.error || "Re-ingest failed", "error");
+    } finally {
+      setReingesting(null);
     }
   }
 
@@ -252,73 +284,107 @@ export default function App() {
     setConversations([]);
     setActiveConversationId("");
     setMessages([]);
+    setUploadedDocs([]);
+    setIngestedDocs(new Set());
   }
 
-  if (!token) {
-    return <AuthScreen onAuth={handleAuth} />;
-  }
+  if (!token) return <AuthScreen onAuth={handleAuth} />;
+
+  const hasIngestedDocs = ingestedDocs.size > 0;
 
   return (
     <div className="min-h-screen bg-slateMist p-4 md:p-8">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
       <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-[1280px] rounded-[24px] bg-white/65 shadow-cloud backdrop-blur-xl">
-        <aside className="w-full max-w-[280px] rounded-l-[24px] border-r border-slate-200 bg-slate-50/90 p-4 md:p-6">
+
+        {/* Sidebar */}
+        <aside className="flex w-full max-w-[280px] flex-col rounded-l-[24px] border-r border-slate-200 bg-slate-50/90 p-4 md:p-6">
           <h1 className="mb-5 text-2xl font-extrabold tracking-[0.2em] text-slate-900">CHAT A.I+</h1>
 
-          <div className="mb-5 flex items-center gap-2">
-            <button
-              onClick={handleNewChat}
-              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-soft"
-            >
-              <CirclePlus size={16} />
-              New chat
-            </button>
-            <button className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-700 shadow-soft">
-              <Search size={18} />
-            </button>
+          <button
+            onClick={handleNewChat}
+            className="mb-5 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-soft"
+          >
+            <CirclePlus size={16} />
+            New chat
+          </button>
+
+          {/* Conversations */}
+          <p className="mb-2 text-xs font-medium text-slate-500">Conversations</p>
+          <div className="scrollbar-thin mb-4 max-h-[28vh] flex-shrink-0 space-y-1 overflow-y-auto pr-1">
+            {conversations.length === 0 ? (
+              <p className="px-2 py-1 text-xs text-slate-400">No conversations yet</p>
+            ) : (
+              conversations.map((conversation) => {
+                const active = conversation.conversation_id === activeConversationId;
+                return (
+                  <button
+                    key={conversation.conversation_id}
+                    onClick={() => setActiveConversationId(conversation.conversation_id)}
+                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition ${
+                      active ? "border border-blue-200 bg-blue-50 text-blue-700" : "border border-transparent text-slate-700 hover:bg-white"
+                    }`}
+                  >
+                    <MessageSquare size={14} className="flex-shrink-0" />
+                    <span className="truncate">{conversation.title || "Untitled chat"}</span>
+                  </button>
+                );
+              })
+            )}
           </div>
 
-          <p className="mb-3 text-xs font-medium text-slate-500">Your conversations</p>
+          {/* PDF Documents */}
+          <div className="flex-1 rounded-2xl border border-dashed border-slate-300 bg-white p-3">
+            <p className="mb-2 text-xs font-semibold text-slate-600">PDF Knowledge Base</p>
 
-          <div className="scrollbar-thin max-h-[56vh] space-y-2 overflow-y-auto pr-1">
-            {conversations.map((conversation) => {
-              const active = conversation.conversation_id === activeConversationId;
-              return (
-                <button
-                  key={conversation.conversation_id}
-                  onClick={() => setActiveConversationId(conversation.conversation_id)}
-                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition ${
-                    active
-                      ? "border border-blue-200 bg-blue-50 text-blue-700"
-                      : "border border-transparent text-slate-700 hover:bg-white"
-                  }`}
-                >
-                  <MessageSquare size={14} />
-                  <span className="truncate">{conversation.title || "Untitled chat"}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-3">
-            <p className="mb-2 text-xs text-slate-500">Add your PDF knowledge</p>
+            {/* Upload button */}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={ingesting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-70"
+              className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-70"
             >
               <FileUp size={16} />
-              {ingesting ? "Uploading..." : "Upload PDF"}
+              {ingesting ? "Uploading & indexing..." : "Upload PDF"}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              onChange={handleUploadPdf}
-              className="hidden"
-            />
+            <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleUploadPdf} className="hidden" />
+
+            {/* Document list */}
+            {uploadedDocs.length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-2">No PDFs uploaded yet</p>
+            ) : (
+              <div className="space-y-2 max-h-[24vh] overflow-y-auto">
+                {uploadedDocs.map((doc) => {
+                  const isIngested = ingestedDocs.has(doc);
+                  const isReingesting = reingesting === doc;
+                  return (
+                    <div key={doc} className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${isIngested ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                      <FileText size={14} className={`mt-0.5 flex-shrink-0 ${isIngested ? "text-green-600" : "text-amber-600"}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-slate-800" title={doc}>{doc}</p>
+                        <p className={`text-[10px] ${isIngested ? "text-green-600" : "text-amber-600"}`}>
+                          {isIngested ? "✓ Ready to query" : "⚠ Needs re-indexing"}
+                        </p>
+                      </div>
+                      {!isIngested && (
+                        <button
+                          onClick={() => handleReingest(doc)}
+                          disabled={isReingesting}
+                          title="Re-index this document"
+                          className="flex-shrink-0 rounded-lg p-1 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+                        >
+                          <RotateCcw size={13} className={isReingesting ? "animate-spin" : ""} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div className="mt-6 space-y-2 border-t border-slate-200 pt-4">
+          {/* Bottom user section */}
+          <div className="mt-4 space-y-2 border-t border-slate-200 pt-4">
             <button className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-white">
               <Settings size={15} />
               Settings
@@ -337,22 +403,46 @@ export default function App() {
           </div>
         </aside>
 
+        {/* Main chat area */}
         <main className="relative flex-1 rounded-r-[24px] bg-white/80 p-4 md:p-8">
           <div className="scrollbar-thin mb-24 h-[calc(100vh-8.5rem)] overflow-y-auto rounded-[24px] border border-slate-200 bg-white p-6 shadow-soft">
             {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                <AlertCircle size={15} className="flex-shrink-0" />
                 {error}
+                <button onClick={() => setError("")} className="ml-auto flex-shrink-0 opacity-60 hover:opacity-100"><X size={13} /></button>
               </div>
             )}
 
             {!messages.length && (
               <div className="flex h-full items-center justify-center text-center">
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">Conversation</p>
-                  <h2 className="text-2xl font-semibold text-slate-800">
-                    {activeConversation?.title || "Start a new chat"}
-                  </h2>
-                </div>
+                {!hasIngestedDocs ? (
+                  <div>
+                    <div className="mb-4 grid h-16 w-16 place-items-center rounded-full bg-blue-50 mx-auto">
+                      <FileUp size={28} className="text-blue-400" />
+                    </div>
+                    <h2 className="mb-2 text-xl font-semibold text-slate-800">Upload a PDF to get started</h2>
+                    <p className="text-sm text-slate-500 max-w-xs">
+                      Use the sidebar to upload your PDF document, then ask anything about its contents.
+                    </p>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="mt-5 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-soft"
+                    >
+                      Upload PDF
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">Ready</p>
+                    <h2 className="text-2xl font-semibold text-slate-800">
+                      {activeConversation?.title || "Ask anything about your documents"}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {ingestedDocs.size} document{ingestedDocs.size !== 1 ? "s" : ""} indexed
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -366,11 +456,9 @@ export default function App() {
                     {message.role === "assistant" ? "CHAT A.I+" : username}
                   </span>
                 </div>
-
                 <div className={`rounded-2xl px-4 py-3 ${message.role === "assistant" ? "bg-slate-50" : "bg-blue-50"}`}>
                   {message.role === "assistant" ? (
                     <div>
-                      <h3 className="mb-2 text-base font-bold text-slate-900">Here is what I found:</h3>
                       <div className="space-y-2 text-sm leading-7 text-slate-700">
                         {formatAssistantMessage(message.content).map((line, lineIndex) => (
                           <p key={lineIndex}>{line}</p>
@@ -379,7 +467,13 @@ export default function App() {
                       <div className="mt-4 flex items-center gap-3 text-slate-400">
                         <button className="hover:text-slate-700"><ThumbsUp size={16} /></button>
                         <button className="hover:text-slate-700"><ThumbsDown size={16} /></button>
-                        <button className="hover:text-slate-700"><Copy size={16} /></button>
+                        <button
+                          onClick={() => navigator.clipboard.writeText(message.content)}
+                          title="Copy"
+                          className="hover:text-slate-700"
+                        >
+                          <Copy size={16} />
+                        </button>
                         <button className="hover:text-slate-700"><RefreshCcw size={16} /></button>
                       </div>
                     </div>
@@ -391,7 +485,8 @@ export default function App() {
             ))}
 
             {loading && (
-              <div className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+              <div className="mb-4 flex items-center gap-3 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
                 Thinking...
               </div>
             )}
@@ -405,12 +500,13 @@ export default function App() {
             <input
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="What's in your mind..."
-              className="flex-1 border-none bg-transparent px-3 py-2 text-sm text-slate-700 outline-none"
+              placeholder={hasIngestedDocs ? "Ask anything about your documents..." : "Upload a PDF first to start chatting..."}
+              disabled={!hasIngestedDocs || loading}
+              className="flex-1 border-none bg-transparent px-3 py-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={loading || !prompt.trim()}
+              disabled={loading || !prompt.trim() || !hasIngestedDocs}
               className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-soft disabled:opacity-50"
             >
               <Send size={16} />

@@ -13,10 +13,14 @@ from .chat_storage import (
 )
 from app.main_pipeline import run_main_pipeline
 from app.ingestion.ingestion_pipeline import run_ingestion_pipeline
+from app.config.db import init_db
 
 app = Flask(__name__)
 CORS(app)
 app.register_blueprint(auth_bp)
+
+with app.app_context():
+    init_db()
 
 
 @app.route('/api/health', methods=['GET'])
@@ -59,6 +63,38 @@ def get_chat_messages(username, conversation_id):
             "conversation_id": conversation_id,
             "messages": messages,
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/documents', methods=['GET'])
+@require_token
+def list_documents(username):
+    try:
+        user_upload_dir = f"data/uploads/{username}"
+        if not os.path.exists(user_upload_dir):
+            return jsonify({"documents": []}), 200
+        files = [
+            f for f in os.listdir(user_upload_dir) if f.endswith('.pdf')
+        ]
+        return jsonify({"documents": files}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/reingest', methods=['POST'])
+@require_token
+def reingest_document(username):
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        if not filename:
+            return jsonify({"error": "filename is required"}), 400
+        file_path = os.path.join(f"data/uploads/{username}", filename)
+        if not os.path.exists(file_path):
+            return jsonify({"error": "File not found"}), 404
+        result = run_ingestion_pipeline(file_path)
+        return jsonify({"message": "Document re-ingested successfully", "result": result}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

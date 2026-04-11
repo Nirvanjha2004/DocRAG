@@ -47,6 +47,16 @@ export async function queryRag({ query, conversationId }) {
   return data;
 }
 
+export async function listDocuments() {
+  const { data } = await client.get("/api/documents");
+  return data.documents || [];
+}
+
+export async function reingestDocument(filename) {
+  const { data } = await client.post("/api/reingest", { filename });
+  return data;
+}
+
 export async function ingestPdf(file) {
   const formData = new FormData();
   formData.append("file", file);

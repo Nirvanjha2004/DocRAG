@@ -1,44 +1,37 @@
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
+from groq import Groq
 from langchain_core.documents import Document
 
 
 def get_answer(context_chunks, user_query, chat_history=""):
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        temperature=0.3
-    )
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
     context_text = "\n\n".join(
         chunk.page_content if isinstance(chunk, Document) else str(chunk)
         for chunk in context_chunks
     )
 
-    template = """You are a helpful assistant. Use the following context to answer the user's question.
-If the answer is not in the context, just say that you don't know.
+    system_prompt = (
+        "You are a helpful assistant. Use the provided context to answer the user's question. "
+        "If the answer is not in the context, say that you don't know."
+    )
 
-Conversation history:
+    user_content = f"""Conversation history:
 {chat_history}
 
 Context:
-{context}
+{context_text}
 
-Question: 
-{input}
+Question:
+{user_query}"""
 
-Answer:"""
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.3,
+    )
 
-    prompt = PromptTemplate.from_template(template)
-    chain = prompt | llm
-
-    response = chain.invoke({
-        "context": context_text,
-        "input": user_query,
-        "chat_history": chat_history,
-    })
-
-    if hasattr(response, "content"):
-        return response.content
-    return str(response)
+    return response.choices[0].message.content

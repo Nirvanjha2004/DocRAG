@@ -8,7 +8,7 @@ def init_db():
     if "documents" not in existing:
         client.create_collection(
             collection_name="documents",
-            vectors_config=VectorParams(size=768, distance=Distance.COSINE)
+            vectors_config=VectorParams(size=3072, distance=Distance.COSINE)
         )
 
 def get_client():
